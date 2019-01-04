@@ -1,0 +1,297 @@
+# -*- coding: utf-8 -*-
+import os
+import sys
+from openpyxl import Workbook
+from matplotlib import pyplot as plt
+
+def clean_value(string):    # regex로 보완해야 함
+    number_type = "int"
+    clean_value = ""
+    for i in string:
+        if (ord(i) >= ord('0') and ord(i) <= ord('9')):
+            clean_value += i
+        elif i == 'x' or i == 'X':
+            number_type = "hex"
+        elif (ord(i) >= ord('a') and ord(i) <= ord('f')):
+            clean_value += i
+            number_type = "hex"
+        elif i == '.':
+            clean_value += i
+            number_type = "float"
+            
+    if number_type == "hex":
+        clean_value = int(clean_value, 16)
+    elif number_type == "float":
+        clean_value = float(clean_value)
+    else:
+        clean_value = int(clean_value)
+    
+    return clean_value
+    
+
+def string_cleaning(string):    
+    string = string.replace('\n',' ')
+    string = string.replace(':',' ') 
+    string = string.replace('=',' ')
+    string = string.replace('#',' ')
+    string = string.replace("(c)",' ')
+    
+    string = string.rstrip()
+    string = string.lstrip()
+    return string
+
+
+def string_preprocessing(string):   # 일관된 전처리 필요
+    string = string.lower()
+    string = string.rstrip()
+    string = string.lstrip()
+    return string
+
+
+def parsing_smart_log(file_name, ext):
+    f = open(file_name, 'r')
+
+    not_wanted = 0
+    already_find = set()
+
+    start_point = "critical_warning"
+    if ext == ".rst":
+        start_point = "Get Log Smart Entry : Get Log Smart Information"
+    elif ext == ".rep":
+        start_point = "SMART Health Log"
+    
+    smart_log = {}
+    while True:
+        line = f.readline()
+        if not line: break
+        if line.find(start_point) == -1: continue
+
+        if start_point == "critical_warning":
+            line = string_preprocessing(line)
+            line = string_cleaning(line)
+            temp = line.split()
+
+            already_find.add(temp[0])
+            smart_log[string_cleaning(temp[0])] = clean_value(string_cleaning(temp[1])) # 하나씩 없애면서 매칭 / 풀 두 개를 만듬 / 이미 찾은 풀 / 유효 풀
+
+        while True:
+            # 종료 조건
+            if not_wanted > 10: break
+
+            line = f.readline()
+            if not line: break
+            line = string_preprocessing(line) # 일관된 전처리 필요
+            line = string_cleaning(line)
+            if not line: continue
+            
+            temp = line.split()
+
+            if len(temp) < 2 or not temp[0] in smart_attribute_set or temp[0] in already_find:
+                not_wanted += 1
+                continue
+            if len(temp) >= 3: continue     # 나중에 필요시 처리
+
+            already_find.add(temp[0])
+            smart_log[string_cleaning(temp[0])] = clean_value(string_cleaning(temp[1]))
+        break      
+    f.close()
+    return smart_log
+
+
+
+
+# 완성
+def parsing_spec_smart_by_vendor(vendor, file_name):
+    spec_smart = {}
+    try :
+        f = open(file_name, 'r')
+        while True:
+            line = f.readline()
+            if not line: break 
+            line = string_preprocessing(line)
+            line = string_cleaning(line)
+            if not line: continue
+            
+            temp = line.split()
+            if len(temp) < 2:
+                print (vendor + "'s spec_smart value is NOT EXIST !")
+                sys.exit()
+            value = clean_value(string_cleaning(temp[1]))    # %C, 이러한 문자들 제거 / 여러 값이 들어있는 항목은 고려하지 않음 if len(temp) > 2:  경우에 대한 처리
+            spec_smart[string_cleaning(temp[0])] = value
+        f.close()
+    except :
+        print (file_name + " : DOES NOT EXIST !")
+        sys.exit()
+    
+    return spec_smart
+
+
+
+
+# 완성
+def load_vendors(file_name):
+    try :
+        f = open(file_name, 'r')
+        vendor_list = set()
+        spec_smart_by_vendor = {}
+        while True:
+            line = f.readline()
+            if not line: break 
+            line = string_cleaning(line)
+            if not line: continue
+            vendor = line
+            vendor_list.add(vendor)
+            spec_smart_by_vendor[vendor] = {}
+        f.close()
+    except:
+        print (file_name + " : DOES NOT EXIST !")
+        sys.exit()
+    return vendor_list, spec_smart_by_vendor
+
+
+
+# path 정리
+cwd = os.getcwd()
+cwd = os.path.join(cwd, "general_dir")
+smart_log_dir_path = os.path.join(cwd, "smart_log")
+spec_smart_by_vendor_dir_path = os.path.join(cwd, "spec_smart_by_vendor")
+parsed_log_dir_path = os.path.join(cwd, "parsed_log")
+smart_graph_dir_path = os.path.join(cwd, "smart_graph")
+
+
+
+# dir 정리
+if not os.path.exists(cwd):
+    os.makedirs(cwd)
+if not os.path.exists(parsed_log_dir_path):
+    os.makedirs(parsed_log_dir_path)
+if not os.path.exists(spec_smart_by_vendor_dir_path):
+    os.makedirs(spec_smart_by_vendor_dir_path)
+if not os.path.exists(smart_log_dir_path):
+    os.makedirs(smart_log_dir_path)
+if not os.path.exists(smart_graph_dir_path):
+    os.makedirs(smart_graph_dir_path)
+    
+    
+smart_attribute_set = set()
+f2 = open(os.path.join(cwd, "smart_attribute_set.txt"),'r')
+while True:
+    line = f2.readline()
+    if not line: break
+    line = string_cleaning(line)
+    line = line.lower()
+    smart_attribute_set.add(line)
+
+
+vendor_list = set()
+spec_smart_by_vendor = {}
+
+vendor_list, spec_smart_by_vendor = load_vendors(os.path.join(spec_smart_by_vendor_dir_path, "vendor.txt")) # 여기에서 vendor별로 dic 자료구조 생성
+
+parsed_smart_log = {}
+
+# 고객별로 spec에 기재되어 있는 smart 값을 가져오는 부분
+file_names = os.listdir(spec_smart_by_vendor_dir_path)
+for file_name in file_names:
+    full_filename = os.path.join(spec_smart_by_vendor_dir_path, file_name)
+    if not os.path.isfile(full_filename):
+        continue
+    temp = file_name.split('.') # 의심스러운 부분
+    vendor = temp[0].strip()
+    if vendor in vendor_list:
+        spec_smart_by_vendor[vendor] = parsing_spec_smart_by_vendor(vendor, full_filename)   
+    
+
+# smart 로그 파싱
+dir_names = os.listdir(smart_log_dir_path)
+for dir_name in dir_names:
+    full_dir_name = os.path.join(smart_log_dir_path, dir_name)
+    if os.path.isfile(full_dir_name):
+        continue
+    
+    
+    file_names = os.listdir(full_dir_name)
+    for file_name in file_names:
+        full_file_name = os.path.join(full_dir_name, file_name)
+        
+        if not os.path.isfile(full_file_name):
+            continue
+    
+    
+        temp = file_name.split('.')
+        only_name = temp[0].strip()
+        ext = os.path.splitext(file_name)[-1]
+        
+        # 모두 파싱
+        parsed_smart_log = parsing_smart_log(full_file_name, ext)
+        spec_smart = spec_smart_by_vendor[dir_name] 
+        
+        
+        # 그래프 그리기
+        graph_dir_path_by_log = os.path.join(smart_graph_dir_path, only_name)
+        if not os.path.exists(graph_dir_path_by_log):
+            os.makedirs(graph_dir_path_by_log)
+            
+            
+        x = [0, 1]
+        att_set = list(spec_smart.keys())
+        index = 0
+        temp_title = 1
+        temp_att_set = []
+        
+        for att in att_set:
+            temp_att_set.append(att)
+            
+            if (index + 1) % 5 == 0 or index == len(att_set)-1:
+                index2 = 0
+                print(len(temp_att_set))
+                fig, axes = plt.subplots(1, len(temp_att_set), figsize=(15,10))
+                for axe in axes:
+                    temp_att = temp_att_set[index2]
+                    y = [parsed_smart_log.get(temp_att,0), spec_smart[temp_att]]      # 수정 필요
+                    barlist = axe.bar(x, y)
+                    barlist[1].set_color('r')
+                    axe.set_title(temp_att)
+                    axe.set_ylabel("value")
+                    axe.grid(True)
+                    index2 += 1
+                
+                plt.tight_layout()
+                plt.show()
+                fig.savefig(os.path.join(graph_dir_path_by_log,str(temp_title)))
+                temp_att_set.clear()
+                temp_title += 1
+                
+            index += 1
+
+
+
+
+        # 엑셀로 쓰기
+        wb = Workbook()
+        ws = wb.active
+        
+        ws.cell(row=1, column=1, value="Attribute")
+        ws.cell(row=1, column=2, value="SMART from drive")
+        ws.cell(row=1, column=3, value="SMART from specification")
+        
+        row = 2
+        for attribute in parsed_smart_log.keys():
+            ws.cell(row=row, column=1, value=attribute)
+            ws.cell(row=row, column=2, value=parsed_smart_log[attribute])
+            ws.cell(row=row, column=3, value=spec_smart.get(attribute, '=NA()'))
+            row += 1
+        
+        wb.save(os.path.join(parsed_log_dir_path, only_name+".xlsx"))
+    
+
+
+
+
+
+
+
+
+
+
+
