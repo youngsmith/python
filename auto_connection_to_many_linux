@@ -1,0 +1,144 @@
+# first of all, you need to make a file that includes all ip addresses of linux you want to access.
+# please, modify a path that a file exists at.
+
+
+import pandas as pd
+import os
+import sys
+import time
+import subprocess
+import pdb
+import getopt
+
+def string_cleaning(string):    
+    string = string.replace('\n','')
+    string = string.rstrip()
+    string = string.lstrip()
+    return string
+
+
+def help():
+    print("-------------------Usage------------------")
+    print("")
+    print("--ssh : executing any command on target server")
+    print("ex) python server_auto_check.py --ssh='nvme list'")
+    print("")
+    print("--scp : sending a file from my computer to target server")
+    print("ex) python server_auto_check.py --scp --from='/home/ppt/Desktop/test.py' --to='/home/ppt/Desktop/'")
+    print("")
+    print("--capture_output : saving each output as a file, default to 0")
+    print("ex) python server_auto_check.py --ssh='ls /home/ppt/' --capture_output")
+    print("")
+    return
+
+
+try :
+    opts, args = getopt.getopt(sys.argv[1:], "",["ssh=","scp","from=", "to=", "capture_output"])
+except getopt.GetoptError as err:
+    print(str(err))
+    help()
+    sys.exit(1)
+
+cmd = ""
+file_path = ""
+target_dir_path = ""
+action = ""
+capture_output = 0
+for opt, arg in opts:
+    if(opt == "--ssh"):
+        action = opt
+        #print("ssh : ", arg)
+        cmd = arg
+    elif(opt == "--scp"):
+        action = opt
+        #print("scp : ")
+    elif(opt == "--from"):
+        file_path = arg
+        #print("from : ", file_path)
+    elif(opt == "--to"):
+        target_dir_path = arg
+        #print("to : ", target_dir_path)
+    elif(opt == "--capture_output"):
+        capture_output = 1
+    elif(opt == "--help"):
+        help()
+
+
+if(action == "--scp" and (file_path == "" or target_dir_path == "")):
+    help()
+    sys.exit(1)
+
+
+
+
+cwd = os.getcwd()
+template_achive_dir_path = os.path.join(cwd, "template achive")
+
+# maching file read
+matching_file_path = os.path.join(template_achive_dir_path, "matching.txt")
+f = open(matching_file_path,'r')
+
+line = f.readline()
+col_name = line.split()
+matching_data = {}
+for name in col_name:
+    matching_data[name] = []
+    
+while True:
+    line = f.readline()
+    if not line: break
+    line = line.replace(' / ','/')
+    data_list_temp = line.split()
+    
+    for i in range(len(col_name)):
+        matching_data[col_name[i]].append(data_list_temp[i])
+                                    
+f.close()    
+       
+df = pd.DataFrame(data=matching_data, index=matching_data["server_name"])
+
+
+
+
+
+
+now = time.localtime(time.time())
+captured_output_dir_name = str(now.tm_year) + '_' + str(now.tm_mon) + '_' + str(now.tm_mday) + '_' + str(now.tm_hour) + '_' + str(now.tm_min) + '_' + str(now.tm_sec) + '-'
+captured_output_dir_name += "-captured_output"
+captured_output_dir_path = os.path.join(cwd, captured_output_dir_name)
+
+if(capture_output == 1):
+  os.mkdir(captured_output_dir_path)  
+
+
+
+
+
+for index, row in df.iterrows():
+    print(index + " " + row["target_ip"])
+    if(action == "--scp"):
+        a = subprocess.Popen("sshpass -p ppt scp " + file_path + " root@" + row["target_ip"] + ":" + target_dir_path)
+    elif(action == "--ssh"):
+        a = subprocess.Popen("sshpass -p ppt ssh -o StrictHostKeyChecking=no root@"+row["target_ip"]+" '" + cmd + "'", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    else:
+        help()
+        sys.exit(1)
+        
+    t = 0
+    while a.poll() is None:
+        t+=1
+        if t >= 2.0:
+            #print("kill!")
+            a.kill()
+        time.sleep(1)
+    #print("return code : ", a.returncode)
+    if a.returncode == 0:
+        print("Success!!")
+        if(capture_output == 1):
+            f = open(os.path.join(captured_output_dir_path,index),'w')
+            f.write("host_ip : " + row["target_ip"] + '\n')
+            f.write(a.stdout.read().decode('utf-8'))
+            f.close()    
+    else :
+        print("Fail!!")
+
